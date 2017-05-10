@@ -5,6 +5,19 @@ endif
 SHELL := /bin/bash
 GOREPO := ${GOPATH}/src/github.com/lyft/ratelimit
 
+TRAVIS_BUILD_NUMBER ?= 9999
+NEXUS_CREDENTIALS ?= "anon:precioussecrets"
+# if not set, then we're doing local development
+# as this will be set by the travis matrix for realz
+TARGET_PLATFORM ?= linux
+TARGET_ARCH ?= amd64
+
+RATELIMIT_FEATURE_VERSION=1.0
+RATELIMIT_VERSION=${RATELIMIT_FEATURE_VERSION}.${TRAVIS_BUILD_NUMBER}
+IMAGE_TAG=rossabaker/ratelimit-${RATELIMIT_FEATURE_VERSION}:${RATELIMIT_VERSION}
+
+all: dockerize
+
 .PHONY: bootstrap
 bootstrap:
 	script/install-glide
@@ -30,9 +43,9 @@ check_format: docs_format
 .PHONY: compile
 compile:
 	mkdir -p ${GOREPO}/bin
-	cd ${GOREPO}/src/service_cmd && go build -o ratelimit ./ && mv ./ratelimit ${GOREPO}/bin
-	cd ${GOREPO}/src/client_cmd && go build -o ratelimit_client ./ && mv ./ratelimit_client ${GOREPO}/bin
-	cd ${GOREPO}/src/config_check_cmd && go build -o ratelimit_config_check ./ && mv ./ratelimit_config_check ${GOREPO}/bin
+	cd ${GOREPO}/src/service_cmd && GOOS=${TARGET_PLATFORM} GOARCH=${TARGET_ARCH} go build -o ratelimit ./ && mv ./ratelimit ${GOREPO}/bin
+	cd ${GOREPO}/src/client_cmd && GOOS=${TARGET_PLATFORM} GOARCH=${TARGET_ARCH} go build -o ratelimit_client ./ && mv ./ratelimit_client ${GOREPO}/bin
+	cd ${GOREPO}/src/config_check_cmd && GOOS=${TARGET_PLATFORM} GOARCH=${TARGET_ARCH} go build -o ratelimit_config_check ./ && mv ./ratelimit_config_check ${GOREPO}/bin
 
 .PHONY: tests_unit
 tests_unit: compile
@@ -45,3 +58,21 @@ tests: compile
 .PHONY: proto
 proto:
 	script/generate_proto
+
+.PHONY: dockerize
+dockerize: compile
+	docker build -t ${IMAGE_TAG} .
+
+.PHONY: run-local
+run-local: dockerize
+	env IMAGE_TAG=${IMAGE_TAG} docker-compose up
+
+.PHONY: clean
+clean:
+	rm -rf bin && \
+	rm -rf pkg
+
+.PHONY: clean-all
+clean-all: clean
+	docker rmi -f ${IMAGE_TAG}
+
